@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>群尸来压境</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a1829;
+      color: #ece4ca;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", serif;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
+    }
+    .stage-root {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a1829;
+    }
+    .stage-safe {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: row;
+      overflow: hidden;
+      background: #0d2035;
+    }
+    .startup-status {
+      margin: 6px 0 0 0;
+      font-size: 12px;
+      color: #f0d598;
+      text-align: center;
+      text-shadow: 0 1px 2px #09121d;
+    }
+  </style>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="stage-root" class="stage-root">
+    <!-- 统一安全容器：所有页面均在此内，彻底避开小红书顶部状态栏与胶囊按钮 -->
+    <div id="stage-safe" class="stage-safe">
+      <!-- 1:1 原作左侧皇家蓝金指挥栏 -->
+      <aside id="left-hud" class="left-hud is-hidden">
+        <div class="hud-top-stats">
+          <div class="meter-row">
+            <div class="meter-track"><div id="wall-hp-fill" class="meter-fill hp-fill"></div></div>
+            <span id="wall-hp-text" class="meter-label">城墙 100/100</span>
+          </div>
+          <div class="meter-row">
+            <div class="meter-track"><div id="spawn-prog-fill" class="meter-fill spawn-fill"></div></div>
+            <span id="spawn-prog-text" class="meter-label">出兵蓄力</span>
+          </div>
+          <div class="currency-row">
+            <div class="res-box res-gold">
+              <img class="res-ico" src="./assets/ui/coin.webp" alt="">
+              <span id="hud-gold">0</span>
+              <span id="income-tag" class="income-tag"></span>
+            </div>
+            <div class="res-box res-soul">
+              <img class="res-ico" src="./assets/ui/soul.webp" alt="">
+              <span id="hud-souls">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-section">
+          <div class="grid-caption">
+            <span>城墙兵营</span>
+            <span id="worker-status" class="worker-tag"></span>
+          </div>
+          <div id="building-grid" class="building-grid"></div>
+        </div>
+
+        <div class="hud-footer">
+          <div class="level-title-row">
+            <span id="hud-level" class="hud-level-txt">第 1 关</span>
+            <span id="wave-timer" class="hud-timer-txt">01:00</span>
+          </div>
+          <div class="army-row">
+            <div class="army-box"><img class="army-ico" src="./assets/ui/army_living.webp" alt=""><span id="living-count" class="living-txt">0</span></div>
+            <span class="vs-txt">对阵</span>
+            <div class="army-box"><img class="army-ico" src="./assets/ui/army_enemy.webp" alt=""><span id="undead-count" class="undead-txt">0</span></div>
+          </div>
+          <div class="hud-tools">
+            <button id="btn-speed" type="button" class="tool-btn">1倍速</button>
+            <button id="btn-pause" type="button" class="tool-btn">暂停</button>
+            <button id="btn-battle-settings" type="button" class="tool-btn">设置</button>
+            <button id="btn-demolish" type="button" class="tool-btn is-hidden"><img class="tool-ico" src="./assets/ui/demolish.webp" alt="">拆</button>
+            <button id="btn-surrender" type="button" class="tool-btn tool-danger">撤退</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 右侧横屏主战场 -->
+      <main id="main-stage" class="main-stage" aria-busy="true">
+        <canvas id="battle-canvas" class="battle-canvas"></canvas>
+
+        <!-- 战斗悬浮层 -->
+        <div id="battle-overlay" class="battle-overlay is-hidden">
+          <div class="battle-top-bar">
+            <div id="boss-bar" class="boss-bar is-hidden">
+              <div class="boss-frame-wrap">
+                <div class="boss-fill-clip"><img id="boss-hp-fill" class="boss-fill-img" src="./assets/ui/boss_fill.webp" alt=""></div>
+                <img class="boss-frame-img" src="./assets/ui/boss_frame.webp" alt="">
+                <div class="boss-overlay-txt">
+                  <span id="boss-phase">暗影女皇 · 第一阶段</span>
+                  <span id="boss-hp-text">667万 / 667万</span>
+                </div>
+              </div>
+            </div>
+            <button id="btn-skip-tutorial" type="button" class="skip-tut-btn is-hidden">跳过教学</button>
+          </div>
+
+          <div id="boss-toast" class="boss-toast is-hidden" role="status"></div>
+
+          <!-- 局内双人角色对话气泡（移植原作官方中文互怼与语音提示） -->
+          <div id="dialogue-box" class="dialogue-box is-hidden">
+            <img id="dialogue-portrait" class="dlg-portrait" src="./assets/ui/king_new.webp" alt="">
+            <div class="dlg-content">
+              <div id="dialogue-speaker" class="dlg-speaker">狮心国王</div>
+              <div id="dialogue-text" class="dlg-text"></div>
+            </div>
+          </div>
+
+          <!-- 新手教程气泡指引 -->
+          <div id="tutorial-banner" class="tutorial-banner is-hidden">
+            <img class="tut-portrait" src="./assets/ui/king_new.webp" alt="">
+            <div class="tut-text-box">
+              <div id="tut-step-title" class="tut-title">新手教学 · 第一步</div>
+              <div id="tut-step-desc" class="tut-desc">点击左侧闪烁的空位建造第一座农民小屋！</div>
+            </div>
+          </div>
+
+          <!-- 底部兵种选择条与主动技能栏（持久化 DOM，零重建） -->
+          <div class="battle-bottom-bar">
+            <div id="unit-palette" class="unit-palette"></div>
+            <div id="ability-bar" class="ability-bar"></div>
+          </div>
+        </div>
+
+        <!-- 1:1 原作横屏标题页（全新狮心国王 & 暗影女皇立绘 + 纯中文 Logo） -->
+        <section id="title-screen" class="title-screen">
+          <div class="title-vignette"></div>
+          <img class="title-portrait portrait-left" src="./assets/ui/king_new.webp" alt="">
+          <img class="title-portrait portrait-right" src="./assets/ui/empress_new.webp" alt="">
+
+          <div class="title-center">
+            <img class="title-logo" src="./assets/ui/logo.webp" alt="群尸来压境">
+            <p id="startup-status" class="startup-status" role="status">正在准备战场与精灵图集，若长时间未就绪请退出重进。</p>
+            <div id="title-actions" class="title-actions is-hidden">
+              <button id="btn-start-battle" type="button" class="plate-btn plate-gold">开始新手教学</button>
+              <div class="title-sub-row">
+                <button id="btn-open-talents" type="button" class="plate-btn plate-normal plate-sm-btn">灵魂天赋树</button>
+                <button id="btn-select-level" type="button" class="plate-btn plate-normal plate-sm-btn">战役关卡</button>
+              </div>
+              <div class="title-sub-row">
+                <button id="btn-open-rank" type="button" class="plate-btn plate-normal plate-sm-btn">战绩排行榜</button>
+                <button id="btn-open-settings" type="button" class="plate-btn plate-normal plate-sm-btn">游戏设置</button>
+              </div>
+              <div class="title-meta-row">
+                <span class="title-pill"><img class="res-ico-sm" src="./assets/ui/soul.webp" alt="">灵魂 <strong id="title-souls-val">0</strong></span>
+                <span id="follow-buff-pill" class="title-pill pill-buff is-hidden"><img class="res-ico-sm" src="./assets/ui/coin.webp" alt="">关注特权：每秒+1金币</span>
+                <button id="btn-reopen-follow" type="button" class="title-pill pill-gift">关注送50魂+产金</button>
+              </div>
+              <p id="storage-hint" class="storage-hint"></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 首次打开自动弹出：原作画风「关注作者」弹窗 -->
+        <section id="follow-screen" class="screen-panel is-hidden">
+          <div class="medieval-popup follow-popup">
+            <img class="popup-hero" src="./assets/ui/king_new.webp" alt="">
+            <div class="popup-body">
+              <h2 class="popup-heading">领主见面礼 · 关注作者</h2>
+              <p class="popup-text">欢迎来到《群尸来压境》！关注作者即可立刻解锁王国补给特权，助你横扫三十关亡灵大军：</p>
+              <div class="reward-row">
+                <div class="reward-card">
+                  <img class="reward-ico" src="./assets/ui/soul.webp" alt="">
+                  <div><strong>+50 灵魂</strong><span>立即到账，开局点天赋</span></div>
+                </div>
+                <div class="reward-card">
+                  <img class="reward-ico" src="./assets/ui/coin.webp" alt="">
+                  <div><strong>永久 +1 金币/秒</strong><span>全局生效，快人一步</span></div>
+                </div>
+              </div>
+              <p id="follow-status-msg" class="popup-note"></p>
+              <div class="popup-actions">
+                <button id="btn-do-follow" type="button" class="plate-btn plate-gold">立即关注并领取</button>
+                <button id="btn-skip-follow" type="button" class="plate-btn-sm">暂不关注</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 阵亡紧急救援：分享小红书笔记 → 满血复活 + 全屏圣光炸弹波 -->
+        <section id="revive-screen" class="screen-panel is-hidden">
+          <div class="medieval-popup revive-popup">
+            <img class="popup-hero" src="./assets/ui/king_new.webp" alt="">
+            <div class="popup-body">
+              <h2 class="popup-heading">城墙危急 · 圣光救援！</h2>
+              <p class="popup-text">亡灵突破了城防！分享战况到小红书笔记，即可免费<strong>复活一次</strong>：城墙瞬间回满血，并释放<strong>全屏圣光炸弹波</strong>清空场上亡灵！</p>
+              <p id="revive-status-msg" class="popup-note"></p>
+              <div class="popup-actions">
+                <button id="btn-share-revive" type="button" class="plate-btn plate-gold">分享笔记并复活</button>
+                <button id="btn-give-up" type="button" class="plate-btn-sm">放弃复活，带灵魂撤退</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 原作星图连线灵魂天赋树 -->
+        <section id="talent-screen" class="screen-panel is-hidden">
+          <div class="talent-shell">
+            <div class="talent-header">
+              <div class="talent-title-group">
+                <h2 class="sheet-title">灵魂天赋星图</h2>
+                <span class="talent-soul-badge"><img class="res-ico" src="./assets/ui/soul.webp" alt=""><strong id="talent-souls-val">0</strong></span>
+                <span id="talent-summary" class="sheet-sub">已点亮 0 级</span>
+              </div>
+              <div class="talent-head-btns">
+                <button id="btn-talent-zoom-out" type="button" class="plate-btn-sm">缩小</button>
+                <button id="btn-talent-zoom-in" type="button" class="plate-btn-sm">放大</button>
+                <button id="btn-talent-center" type="button" class="plate-btn-sm">回到起点</button>
+                <button id="btn-close-talents" type="button" class="plate-btn-sm">返回</button>
+              </div>
+            </div>
+            <div class="talent-body">
+              <div id="talent-viewport" class="talent-viewport">
+                <div id="talent-canvas-wrap" class="talent-canvas-wrap">
+                  <svg id="talent-links" class="talent-links"></svg>
+                  <div id="talent-nodes" class="talent-nodes"></div>
+                </div>
+              </div>
+              <aside class="talent-inspector">
+                <div class="insp-head">
+                  <img id="insp-icon" class="insp-icon" src="./assets/buildings/peasant.webp" alt="">
+                  <div>
+                    <div id="insp-name" class="insp-name">草叉暴民</div>
+                    <div id="insp-lv" class="insp-lv">0 / 3 级</div>
+                  </div>
+                </div>
+                <p id="insp-desc" class="insp-desc">点击左侧星图中的任意节点查看详情并消耗灵魂升级。</p>
+                <p id="insp-req" class="insp-req"></p>
+                <button id="btn-buy-talent" type="button" class="plate-btn plate-gold insp-buy-btn">消耗 1 魂升级</button>
+                <p class="insp-tip">提示：可上下左右滑动浏览整张星图，双击已选节点也可快速升级。</p>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <!-- 30 关战役选择 -->
+        <section id="level-screen" class="screen-panel is-hidden">
+          <div class="modal-sheet">
+            <div class="sheet-header">
+              <div>
+                <h2 class="sheet-title">战役关卡（共 30 关）</h2>
+                <p id="level-summary" class="sheet-sub">已解锁至第 1 关</p>
+              </div>
+              <button id="btn-close-levels" type="button" class="plate-btn-sm">返回</button>
+            </div>
+            <div id="level-grid" class="scroll-container level-grid"></div>
+          </div>
+        </section>
+
+        <!-- 游戏标准设置弹窗 -->
+        <section id="settings-screen" class="screen-panel is-hidden">
+          <div class="modal-sheet settings-sheet">
+            <div class="sheet-header">
+              <div>
+                <h2 class="sheet-title">游戏设置</h2>
+                <p class="sheet-sub">声音、画质与局内体验配置（自动保存）</p>
+              </div>
+              <button id="btn-close-settings" type="button" class="plate-btn-sm">保存并返回</button>
+            </div>
+            <div class="scroll-container settings-body">
+              <div class="set-group">
+                <div class="set-row">
+                  <span class="set-label">总音量</span>
+                  <input id="set-master" type="range" min="0" max="100" value="80" class="set-range">
+                  <span id="val-master" class="set-val">80%</span>
+                </div>
+                <div class="set-row">
+                  <span class="set-label">战斗音效</span>
+                  <input id="set-sfx" type="range" min="0" max="100" value="80" class="set-range">
+                  <span id="val-sfx" class="set-val">80%</span>
+                </div>
+                <div class="set-row">
+                  <span class="set-label">背景战鼓</span>
+                  <input id="set-music" type="range" min="0" max="100" value="45" class="set-range">
+                  <span id="val-music" class="set-val">45%</span>
+                </div>
+              </div>
+              <div class="set-group">
+                <div class="set-row">
+                  <span class="set-label">画面画质（影响帧率）</span>
+                  <div class="seg-group" id="set-quality-group">
+                    <button type="button" class="seg-btn" data-q="low">流畅低画质</button>
+                    <button type="button" class="seg-btn is-active" data-q="medium">均衡中画质</button>
+                    <button type="button" class="seg-btn" data-q="high">精细高画质</button>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <span class="set-label">局内双人对话气泡</span>
+                  <button id="btn-toggle-dialogue" type="button" class="toggle-pill is-on">已开启</button>
+                </div>
+                <div class="set-row">
+                  <span class="set-label">金币与打击飘字</span>
+                  <button id="btn-toggle-floats" type="button" class="toggle-pill is-on">已开启</button>
+                </div>
+                <div class="set-row">
+                  <span class="set-label">打击震动反馈</span>
+                  <button id="btn-toggle-vibrate" type="button" class="toggle-pill is-on">已开启</button>
+                </div>
+              </div>
+              <div class="set-group set-danger-row">
+                <span id="reset-hint" class="set-sub">如需重新体验新手教学与开局流程，可重置存档</span>
+                <button id="btn-reset-save" type="button" class="plate-btn-sm tool-danger">重置存档</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 王国战绩排行榜（小红书官方排行榜 API） -->
+        <section id="rank-screen" class="screen-panel is-hidden">
+          <div class="modal-sheet">
+            <div class="sheet-header">
+              <div>
+                <h2 class="sheet-title">王国战绩排行榜</h2>
+                <p id="rank-my-summary" class="sheet-sub">正在读取我的排名...</p>
+              </div>
+              <button id="btn-close-rank" type="button" class="plate-btn-sm">返回</button>
+            </div>
+            <div id="rank-tabs" class="tab-bar">
+              <button type="button" class="tab-btn is-active" data-period="all">历史总榜</button>
+              <button type="button" class="tab-btn" data-period="week">本周榜单</button>
+              <button type="button" class="tab-btn" data-period="day">今日榜单</button>
+            </div>
+            <div id="rank-list" class="scroll-container rank-list"></div>
+          </div>
+        </section>
+
+        <!-- 结算界面 -->
+        <section id="result-screen" class="screen-panel is-hidden">
+          <div class="medieval-popup result-popup">
+            <div class="popup-body popup-body-full">
+              <h2 id="result-title" class="popup-heading">战斗胜利！</h2>
+              <p id="result-desc" class="popup-text"></p>
+              <div class="result-metrics">
+                <div class="metric-box"><span class="metric-k">击杀亡灵</span><strong id="res-kills">0</strong></div>
+                <div class="metric-box"><span class="metric-k">获得灵魂</span><strong id="res-souls">+0</strong></div>
+                <div class="metric-box"><span class="metric-k">获得金币</span><strong id="res-gold">+0</strong></div>
+              </div>
+              <div class="popup-actions">
+                <button id="btn-next-level" type="button" class="plate-btn plate-gold">迎战下一关</button>
+                <button id="btn-retry-level" type="button" class="plate-btn plate-normal plate-sm-btn">重玩本关</button>
+                <button id="btn-result-talents" type="button" class="plate-btn plate-normal plate-sm-btn">灵魂天赋</button>
+                <button id="btn-save-poster" type="button" class="plate-btn-sm is-hidden">保存战绩图</button>
+                <button id="btn-back-title" type="button" class="plate-btn-sm">返回标题页</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script defer src="./audio.js"></script>
+  <script defer src="./data.js"></script>
+  <script defer src="./engine.js"></script>
+  <script defer src="./renderer.js"></script>
+  <script defer src="./app.js"></script>
+</body>
+</html>
